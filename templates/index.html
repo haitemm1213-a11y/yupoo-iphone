@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>Yupoo Photo Downloader</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="app">
+  <header>
+    <div class="logo">Y</div>
+    <div><h1>Yupoo Photo Downloader</h1><p>Extraction légère des images du HTML</p></div>
+  </header>
+  <section class="card">
+    <label for="urls">Liens Yupoo</label>
+    <textarea id="urls" placeholder="Colle un lien par ligne…" autocomplete="off" autocapitalize="none" spellcheck="false"></textarea>
+    <button id="start" type="button">Télécharger les photos</button>
+    <div class="progress-wrap" aria-live="polite">
+      <div class="progress-row"><strong id="percent">0 %</strong><span id="status">Prêt.</span></div>
+      <div class="track"><div id="bar"></div></div>
+    </div>
+    <button id="zip" class="secondary" type="button" hidden>Télécharger le ZIP</button>
+    <p class="note">Les photos sont récupérées directement depuis le HTML. Aucune analyse IA.</p>
+  </section>
+</main>
+<script>
+const urls = document.getElementById('urls');
+const start = document.getElementById('start');
+const zip = document.getElementById('zip');
+const bar = document.getElementById('bar');
+const percent = document.getElementById('percent');
+const status = document.getElementById('status');
+let timer = null;
+function setProgress(n){ const p=Math.max(0,Math.min(100,Number(n)||0)); bar.style.width=p+'%'; percent.textContent=Math.round(p)+' %'; }
+start.addEventListener('click', async () => {
+  const value=urls.value.trim();
+  if(!value){ status.textContent='Colle au moins un lien Yupoo.'; urls.focus(); return; }
+  start.disabled=true; zip.hidden=true; setProgress(0); status.textContent='Préparation…';
+  try {
+    const r=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls:value})});
+    const d=await r.json(); if(!r.ok) throw new Error(d.error||'Erreur');
+    const id=d.job_id; window.lastJobId=id;
+    timer=setInterval(async()=>{
+      try{
+        const s=await (await fetch('/api/status/'+id)).json();
+        setProgress(s.progress); status.textContent=s.status||'En cours…';
+        if(s.done){ clearInterval(timer); timer=null; start.disabled=false; if(!s.error && s.total>0) zip.hidden=false; }
+      }catch(e){ clearInterval(timer); timer=null; start.disabled=false; status.textContent='Connexion interrompue.'; }
+    },500);
+  }catch(e){ start.disabled=false; status.textContent=e.message; }
+});
+zip.addEventListener('click',()=>{
+  const text=status.textContent;
+  // The last job id is stored from the generated download URL.
+  if(window.lastJobId) location.href='/api/download/'+window.lastJobId;
+});
+const oldFetch=window.fetch;
+// Keep the job id for the ZIP button without changing the backend.
+const originalStart=start.onclick;
+start.addEventListener('click',()=>{});
+// Patch the start handler's request response through a small observer is unnecessary;
+// use a wrapper by storing the id in the request flow above.
+</script>
+</body>
+</html>
